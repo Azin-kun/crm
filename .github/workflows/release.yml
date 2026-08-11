@@ -27,17 +27,48 @@ jobs:
           target-branch: main
           token: ${{ secrets.AUTOMATION_TOKEN || secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Say what happened
+      - name: Put the tag on release
+        if: steps.release.outputs.tag_name
         env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN || secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.tag_name }}
+          SHA: ${{ steps.release.outputs.sha }}
           URL: ${{ steps.release.outputs.html_url }}
         run: |
           set -euo pipefail
-          if [ -n "${TAG:-}" ]; then
-            echo "Released [$TAG]($URL) — merge the promotion pull request to put it on \`release\`." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "No tag this run — either the release pull request is still open, or nothing releasable landed." >> "$GITHUB_STEP_SUMMARY"
+
+          if out=$(gh api "repos/$GITHUB_REPOSITORY/merges" \
+            -f base=release \
+            -f head="$SHA" \
+            -f commit_message="release: $TAG" 2>&1); then
+            echo "Released [$TAG]($URL) and put it on \`release\`. It is live." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
+
+          case "$out" in
+          *"Already merged"* | *"Nothing to merge"*)
+            echo "Released [$TAG]($URL); \`release\` already had it." >> "$GITHUB_STEP_SUMMARY"
+            ;;
+          *)
+            {
+              echo "**[$TAG]($URL) is tagged but did not reach \`release\`.**"
+              echo
+              echo "\`\`\`"
+              echo "$out"
+              echo "\`\`\`"
+              echo
+              echo "\`release\` only ever receives \`main\`, so this means somebody committed to it"
+              echo "directly. Reconcile the two branches, then re-run this workflow from the Actions tab."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+            ;;
+          esac
+
+      - name: Say what happened
+        if: ${{ !steps.release.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          echo "No tag this run — either the release pull request is still open, or nothing releasable landed." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail on a merged release pull request that was never tagged
         env:
