@@ -52,6 +52,19 @@ integration tests. When you need to push past it — a WIP branch, a docker-less
 you are deliberately pushing to ask about — `git push --no-verify` skips it, and `CRM_SKIP_HOOKS=1`
 skips it for a whole shell.
 
+**The suite runs against `TEST_DATABASE_URL`, never `DATABASE_URL`, and refuses to start without
+it.** `bun run db:test` creates the database and migrates it; the name has to end in `_test`.
+These tests write and delete real rows, and the hook above runs them on every push — so without
+that split, one `git push` reaches whatever database your `.env` happens to name, which for a
+self-hoster is production. That is not hypothetical: a run that was interrupted between deleting
+the workspace's members and putting them back left the developer locked out of their own
+workspace, with the app reporting only "Only an owner or an admin can change this".
+
+**A test may not delete a row it did not create.** Snapshot-and-restore is not a substitute: it
+only holds if the process reaches the end, and a crashed run leaves the hole. Where a spec needs
+state it cannot own — `ensureWorkspaceMembership` only backfills an owner into an *empty*
+workspace — it asserts the precondition and fails, rather than clearing whatever is in the way.
+
 **`test` runs one package at a time (`turbo run test --concurrency=1`), and that is not an
 oversight.** `apps/api`, `apps/agent`, `packages/auth` and `packages/telemetry` all have real
 integration tests and they all point at the *same* database, so running them at once lets one
@@ -90,13 +103,11 @@ push a branch ──▶ PR opens by itself, titled from the diff
                         │
                   ◀── click 1: squash into main
                         │
-        two pull requests open, and stay open, together
+        one pull request opens, and stays open and current
           `chore(main): release 0.2.0` ──▶ main
-          `release: promote main` ──▶ release
                         │
-        ◀── click 2: the release PR — tag, notes, CHANGELOG.md
-                        │
-        ◀── click 3: the promotion PR — `release` moves up
+        ◀── click 2: tag, notes, CHANGELOG.md — and the tagged
+            commit lands on `release` on its own, so it is live
 ```
 
 **Pushing any branch that isn't `main` or `release` opens a pull request into `main`.** You do not
@@ -136,37 +147,42 @@ because the squashed commit body is left empty on purpose — the title is the w
 
 ## Releases
 
-Nothing is released by merging to `main`, and nothing is pushed to `release` by hand. Both branches
-only ever move through a pull request, and shipping is two of them.
+**Shipping is one pull request.** `chore(main): release 0.2.0`, into `main`, opened and kept up to
+date by [release-please](https://github.com/googleapis/release-please) as soon as something
+releasable lands. It accumulates every releasable commit, so a stack of merges is one release
+rather than five, and the notes are readable *before* you decide to ship them.
 
-Both open as soon as something lands on `main`, and both stay open and up to date until you use
-them — so the version you are about to cut is readable *before* you decide to ship it.
+Merging it writes `CHANGELOG.md`, bumps the version, tags `v0.2.0`, publishes the GitHub Release
+— and then the workflow opens a `release: v0.2.0` pull request from `main` into `release` and
+merges it, which is what a deploy and a plain clone both point at. **Nothing else to merge, and no
+order to remember**: that pull request opens and closes inside the same run, and you see it only in
+the branch's history.
 
-**The release pull request — `chore(main): release 0.2.0`, into `main`.**
-[release-please](https://github.com/googleapis/release-please) accumulates every releasable commit
-into this one. Merging it writes `CHANGELOG.md`, bumps the version, tags `v0.2.0` and publishes the
-GitHub Release. The notes are reviewable before they are public, and a stack of merges is one
-release rather than five.
+**It has to be a pull request, not a push.** `release` carries a ruleset that requires one, and the
+only bypass is the admin role — which `GITHUB_TOKEN` does not have. The step used to call the REST
+`merges` API, which writes a merge commit straight to the branch, so the ruleset refused it: every
+tag from `v1.6.1` to `v1.8.0` was cut on `main`, published, and never shipped, while production sat
+on the last pull request that had reached `release` by hand. The failure was quiet in the worst way
+— the release itself looked perfect, and only the Vercel dashboard's commit line said otherwise.
 
-**The promotion pull request — `release: promote main`, into `release`.** Its body is the list of
-commits `release` does not have yet, so it is a standing answer to "what is waiting to ship".
-**Merge it with a merge commit, not a squash** — `release` only permits that method, because a
-squash would give `release` a commit of its own and the tags on `main` would stop being ancestors
-of what you shipped.
-
-**Merge the release one first.** Then the tag sits on a commit the promotion carries over, and
-`release` gets the code and its version together. The other order still works — it just ships
-untagged code and leaves the bump for the next promotion.
+It used to be two pull requests, the release one and a `release: promote main`, with a warning on
+the promotion telling you to merge the other one first. Get that order wrong and you shipped
+untagged code and left the version behind for the next promotion. There is no reason a human should
+hold that rule in their head: the tag and the code have to travel together, so the automation does
+it in one step. **`release` is only ever written by that step** — the tag it carries is by
+construction an ancestor of what you shipped.
 
 Three consequences worth knowing:
 
 - **A release PR with nothing in it is not a bug.** A run of `chore:` and `test:` commits bumps
-  nothing, so no PR appears. That is the type doing its job.
-- **Neither automated PR runs CI.** A PR opened by `GITHUB_TOKEN` cannot trigger workflows — that is
-  GitHub's own loop guard, not something to work around. The promotion PR does not care, because
-  `release` has no required checks and the code was already green on `main`. The release PR targets
-  `main`, which does have them, so **an admin merges it past the missing checks** — safe, because it
-  only ever touches `CHANGELOG.md`, the root `version` and the manifest, none of which CI can judge.
+  nothing, so no PR appears. That is the type doing its job. It also means those commits **do not
+  reach production until the next release carries them** — `release` now moves only when a tag is
+  cut. If something has to ship, give it a type that releases: a `fix:` is the floor. Anything that
+  genuinely changes nothing for a user is not urgent, and anything urgent is not a `chore:`.
+- **The release PR does not run CI.** A PR opened by `GITHUB_TOKEN` cannot trigger workflows — that
+  is GitHub's own loop guard, not something to work around. It targets `main`, which has required
+  checks, so **an admin merges it past the missing ones** — safe, because it only ever touches
+  `CHANGELOG.md`, the root `version` and the manifest, none of which CI can judge.
 - **`AUTOMATION_TOKEN` removes that click.** A PAT or GitHub App token in that secret makes the
   automated PRs trigger CI like any other; every workflow already prefers it and falls back to
   `GITHUB_TOKEN`. A branch you push yourself never needed it — your own push triggers CI and the

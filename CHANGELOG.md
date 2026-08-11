@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.8.1](https://github.com/trycompai/crm/compare/v1.8.0...v1.8.1) (2026-08-11)
+
+
+### Fixes
+
+* **ci:** ship releases by opening a pull request into release ([#114](https://github.com/trycompai/crm/issues/114)) ([924060b](https://github.com/trycompai/crm/commit/924060bac114d7fba6681c6b1b2f38de19f36440))
+
+## [1.8.0](https://github.com/trycompai/crm/compare/v1.7.0...v1.8.0) (2026-08-11)
+
+
+### Features
+
+* **agent:** apply sourced facts to empty fields automatically ([#112](https://github.com/trycompai/crm/issues/112)) ([0342c8e](https://github.com/trycompai/crm/commit/0342c8ee62561c8df1db16644c2b049617c908a0))
+
+## [1.7.0](https://github.com/trycompai/crm/compare/v1.6.1...v1.7.0) (2026-08-11)
+
+
+### Features
+
+* **db:** add peek script for inspecting database contents ([#110](https://github.com/trycompai/crm/issues/110)) ([acae8ec](https://github.com/trycompai/crm/commit/acae8ec1ab29851ec66a8a1e8e89672bef6e7eca))
+
+## [1.6.1](https://github.com/trycompai/crm/compare/v1.6.0...v1.6.1) (2026-08-11)
+
+
+### Fixes
+
+* **ci:** fall back to the pushed commit when release-please reports no sha ([d1efd97](https://github.com/trycompai/crm/commit/d1efd9730570730fc569d124f2c74559d47fe790))
+* **ci:** make a release one pull request instead of two ([206c746](https://github.com/trycompai/crm/commit/206c7461e75ee4827960ec07a02843d107514f20))
+
 ## [1.6.0](https://github.com/trycompai/crm/compare/v1.5.1...v1.6.0) (2026-08-11)
 
 
