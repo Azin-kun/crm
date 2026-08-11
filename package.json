@@ -2,7 +2,7 @@
 	"name": "crm",
 	"private": true,
 	"license": "MIT",
-	"version": "1.5.0",
+	"version": "1.5.1",
 	"scripts": {
 		"prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
 		"build": "turbo run build",
@@ -10,7 +10,7 @@
 		"lint": "turbo run lint",
 		"format": "biome format --write .",
 		"check-types": "turbo run check-types",
-		"test": "turbo run test",
+		"test": "turbo run test --concurrency=1",
 		"auth:generate": "turbo run auth:generate",
 		"db:deploy": "turbo run db:deploy",
 		"db:generate": "turbo run db:generate",
