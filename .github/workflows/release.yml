@@ -32,7 +32,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN || secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.tag_name }}
-          SHA: ${{ steps.release.outputs.sha }}
+          SHA: ${{ steps.release.outputs.sha || github.sha }}
           URL: ${{ steps.release.outputs.html_url }}
         run: |
           set -euo pipefail
