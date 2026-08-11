@@ -89,14 +89,36 @@ task row; exists because the API may not call Context.
 - **`classifyKey` rejects on `401` and nothing else.**
 - **The candidate key, never the stored one.**
 
+### `POST /internal/crm/apply-blank-facts`
+
+Applies every pending suggestion whose field is still empty, and clears the ones that
+have stopped saying anything. No session, no model, no task row, no credits —
+`sweepBlankFacts` (`lib/blank-facts.ts`) is a database pass. It exists as a route for
+the same reason `verify-key` does: the rule is `fillsBlank`, the rule lives here, and a
+second copy of it in Nest is what `api.md` forbids. `BlankFactsService` carries the
+question and reports the counts.
+
+- **Scans 2000 suggestions and fills at most 500 a pass**, and says what it did not
+  reach (`unscanned`) rather than reporting a clean sweep it did not make.
+- **Idempotent** — a second pass over the same rows fills nothing, because they are no
+  longer blank.
+- **The suggestions left are conflicts**, every one of them against a value already on
+  the record. That number should be small and should be read as work for a rep.
+
 ### Backfills
 
 Sign-in sweep covers records never looked up (10 credits/company);
 `ImageMirrorService` in the same sweep re-hosts off-site pictures (free);
-`backfill:images` fixes enriched records missing only pictures (free).
+the same sweep asks `apply-blank-facts` above (free);
+`backfill:images` fixes enriched records missing only pictures (free);
+`backfill:facts` is the same fact sweep run by hand, with `--dry` to read it first.
 
 - **The image sweep keeps "every picture is ours" true**, not true-since-Tuesday.
   25 rows/table/sweep.
+- **Nobody clicks a suggestion into a blank field.** The rule is enforced at the write
+  path, so no queue forms; the sweep is for rows written before it existed and for the
+  field a rep clears while a suggestion is pending. **An unreachable agent leaves the
+  suggestions where they are** — the API cannot apply one itself.
 - **A finished `portrait` task stands that contact down for thirty days** — that third
   source costs credits and usually finds nothing.
 - **No button, deliberately** — a rep cannot know which records predate a resolver.
@@ -117,7 +139,23 @@ wrong in the direction that looks useful.
 - **`lib/facts.ts` is the only write path to a contact's fields.** Applies at
   `VERIFIED`, proposes below it, and enforces three things a prompt cannot: never
   overwrite a human, never re-offer a dismissal, never write without a primary source.
-- **Bands are behaviour.** `PROBABLE` means *a rep decides* — a correct outcome.
+- **A band decides only when there is something to lose.** An empty field is filled by
+  whatever cleared the floor for keeping, whatever the band — approving a sourced guess
+  into a blank is a click that can only say yes, and a rep with four hundred contacts
+  reads none of them. `fillsBlank` is the whole rule: no human value in the way and
+  nothing already found. **`PROBABLE` still means *a rep decides* when the field is
+  already filled**, which is the case where a wrong answer costs something. The sign-in
+  sweep applies the same rule to rows that predate it —
+  `POST /internal/crm/apply-blank-facts`, above.
+- **Applying settles the field's other suggestions.** They were all offers to fill the
+  same blank, and the sheet shows one at a time — so left alone, accepting one reveals
+  the next, forever. The same rule holds when a rep accepts one (`decideFact`).
+- **The same value is never offered twice.** A second `PROPOSED` row with a value
+  already waiting is refused at the write path, not deduplicated on read. **The refusal
+  is for offers only** — the check runs after `applies` is decided, so evidence that has
+  reached `VERIFIED` since the offer was made still lands, settles the suggestion it
+  matches, and replaces the older value. Refusing it there left a weaker value on the
+  record with the answer sitting unread beneath it.
 - **A new fact field goes in `FIELDS` (`lib/facts.ts`) *and* `FACT_COLUMNS`**
   (`apps/api/src/contacts/contacts.service.ts`).
 
