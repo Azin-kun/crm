@@ -9,14 +9,13 @@ import { collapsing, runLimited } from "./pool";
 import { runPortrait } from "./portrait";
 import { runSlackChannelJoin } from "./slack-join-task";
 import { runSlackPeopleMatch } from "./slack-people";
+import { staleTaskSweep } from "./stale-tasks";
 import {
 	claimDue,
 	completeTask,
 	DIRECT_KINDS,
 	type LeasedTask,
 	noteSession,
-	retireExhausted,
-	type TaskSubject,
 } from "./tasks";
 
 export const VISIBLE_BATCH = DISPATCH.visible.batch;
@@ -25,24 +24,6 @@ export const VISIBLE_LEASE_MS = DISPATCH.visible.leaseMs;
 
 export const RESEARCH_BATCH = DISPATCH.research.batch;
 export const RESEARCH_LEASE_MS = DISPATCH.research.leaseMs;
-
-export async function retireAbandoned(): Promise<void> {
-	let abandoned: TaskSubject[] = [];
-
-	try {
-		abandoned = await retireExhausted();
-	} catch {
-		return;
-	}
-
-	for (const task of abandoned) {
-		await settle(
-			task,
-			EnrichmentStatus.FAILED,
-			"Research was attempted several times and never completed.",
-		).catch(() => {});
-	}
-}
 
 export async function runVisibleLane(signal?: AbortSignal): Promise<number> {
 	let handled = 0;
@@ -252,20 +233,23 @@ export async function linkSession(
 	return false;
 }
 
-function reasonOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+function reasonOf(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
 }
 
 export function taskAuth(task: LeasedTask, base: AppAuth = APP_AUTH): AppAuth {
+	const records: Record<string, string> = {};
+	if (task.contactId) records.contactId = task.contactId;
+	if (task.companyId) records.companyId = task.companyId;
+	if (task.dealId) records.dealId = task.dealId;
+
 	return {
 		...base,
 		attributes: {
 			taskKind: task.kind,
 			reason: task.reason,
 			budget: String(task.budget),
-			...(task.contactId ? { contactId: task.contactId } : {}),
-			...(task.companyId ? { companyId: task.companyId } : {}),
-			...(task.dealId ? { dealId: task.dealId } : {}),
+			...records,
 		},
 	};
 }
@@ -319,6 +303,7 @@ export function dispatchHealth() {
 		pendingStarts,
 		pendingItems,
 		unlinkedSessions,
+		staleTasks: staleTaskSweep(),
 		lastError: lastSweepError,
 	};
 }
@@ -340,7 +325,6 @@ export const drainAll = collapsing(
 		const signal = controller.signal;
 
 		const sweep = (async () => {
-			await retireAbandoned();
 			await Promise.all([
 				runVisibleLane(signal),
 				runResearchLane(start, signal),
