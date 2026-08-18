@@ -22,10 +22,14 @@ import {
 	type StatusTone,
 } from "@crm/ui/components/status-indicator";
 import { cn } from "@crm/ui/lib/utils";
-import { useQuery } from "@tanstack/react-query";
+import {
+	ENRICHMENT_PAGE,
+	ENRICHMENT_PAGE_MAX,
+} from "@crm/validation/enrichment-queue";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useOpenRecord } from "@/components/crm/record-sheet/record-stack";
-import { elapsedLabel } from "@/lib/enrichment-queue";
+import { elapsedLabel, queueFooter } from "@/lib/enrichment-queue";
 import {
 	ENRICHMENT_IDLE_POLL_MS,
 	ENRICHMENT_POLL_MS,
@@ -51,9 +55,11 @@ export function EnrichmentQueue() {
 	const openRecord = useOpenRecord();
 	const [open, setOpen] = useState(false);
 	const [expanded, setExpanded] = useState(false);
+	const [limit, setLimit] = useState(ENRICHMENT_PAGE);
 
 	const queue = useQuery({
-		...trpc.enrichment.queue.queryOptions(),
+		...trpc.enrichment.queue.queryOptions({ limit }),
+		placeholderData: keepPreviousData,
 		refetchInterval: (query) =>
 			(query.state.data?.total ?? 0) > 0
 				? ENRICHMENT_POLL_MS
@@ -65,21 +71,28 @@ export function EnrichmentQueue() {
 	const scheduled = queue.data?.scheduled ?? [];
 	const scheduledTotal = queue.data?.scheduledTotal ?? 0;
 	const visible = expanded ? rows : rows.slice(0, VISIBLE_ROWS);
-	const hidden = rows.length - visible.length;
-	const more = total - visible.length;
+	const footer = queueFooter({
+		total,
+		fetched: rows.length,
+		shown: visible.length,
+		limit,
+	});
+
+	const close = () => {
+		setOpen(false);
+		setExpanded(false);
+		setLimit(ENRICHMENT_PAGE);
+	};
 
 	const openSubject = (subject: QueueSubject) => {
-		setOpen(false);
+		close();
 		openRecord({ kind: subject.kind, id: subject.id });
 	};
 
 	return (
 		<Popover
 			open={open}
-			onOpenChange={(next) => {
-				setOpen(next);
-				if (!next) setExpanded(false);
-			}}
+			onOpenChange={(next) => (next ? setOpen(true) : close())}
 		>
 			<PopoverTrigger asChild>
 				<Button variant="outline" size="sm">
@@ -119,16 +132,31 @@ export function EnrichmentQueue() {
 					/>
 				)}
 
-				{more > 0 ? (
+				{footer.more > 0 ? (
 					<div className="flex items-center justify-between px-4 py-3 text-xs">
-						<span className="text-muted-foreground">{more} more queued</span>
-						{hidden > 0 ? (
+						<span className="text-muted-foreground">
+							{footer.more} more queued
+						</span>
+						{footer.action === "show-all" ? (
 							<button
 								type="button"
 								className="cursor-pointer text-primary"
 								onClick={() => setExpanded(true)}
 							>
 								Show all
+							</button>
+						) : null}
+						{footer.action === "load-more" ? (
+							<button
+								type="button"
+								className="cursor-pointer text-primary"
+								onClick={() =>
+									setLimit((current) =>
+										Math.min(current + ENRICHMENT_PAGE, ENRICHMENT_PAGE_MAX),
+									)
+								}
+							>
+								Load more
 							</button>
 						) : null}
 					</div>
