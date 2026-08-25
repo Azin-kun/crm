@@ -172,12 +172,21 @@ writeFileSync(
 		regions: ["iad1"],
 	}),
 );
+// Vercel's Hobby plan refuses any cron that would run more than once a day, and
+// it refuses it at the deploy step — after the build has run and the migrations
+// have been applied, so the schema moves and the deployment still does not ship.
+// The schedule is therefore a variable with a Hobby-safe default: a Pro project
+// sets SYNC_CRON_SCHEDULE="*/5 * * * *" and gets the cadence back without a code
+// change. Daily mailbox sync is a real loss of freshness, not a formality — see
+// docs/environment.md on running the sync from an outside scheduler instead.
+const syncSchedule = process.env.SYNC_CRON_SCHEDULE || "0 6 * * *";
+
 writeFileSync(
 	join(outDir, "config.json"),
 	JSON.stringify({
 		version: 3,
 		routes: [{ src: "/(.*)", dest: "/api/index" }],
-		crons: [{ path: "/internal/sync/google", schedule: "*/5 * * * *" }],
+		crons: [{ path: "/internal/sync/google", schedule: syncSchedule }],
 	}),
 );
 
