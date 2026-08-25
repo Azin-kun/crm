@@ -16,6 +16,10 @@ permissions:
 jobs:
   release-please:
     name: Release pull request, tag and notes
+    # Upstream's release automation. This fork consumes releases rather than
+    # cutting them, and it has no `release` branch for the tag to land on, so
+    # the job would fail on every push to main.
+    if: github.repository == 'trycompai/crm'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

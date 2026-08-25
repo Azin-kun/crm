@@ -20,6 +20,10 @@ permissions:
 jobs:
   open:
     name: Open a pull request into main
+    # Upstream's contribution flow: every branch push opens a pull request.
+    # In this fork that is noise, and GitHub Actions cannot create pull
+    # requests without the setting being turned on anyway.
+    if: github.repository == 'trycompai/crm'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
